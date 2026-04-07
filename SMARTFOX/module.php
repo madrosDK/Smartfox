@@ -76,7 +76,7 @@ class SMARTFOX extends IPSModule
         $this->RegisterPropertyString('Host', '192.168.1.100');
         $this->RegisterPropertyInteger('Port', 502);
         $this->RegisterPropertyInteger('UnitID', 1);
-        $this->RegisterPropertyInteger('AddressBase', 40000);
+        $this->RegisterPropertyInteger('AddressBase', 0);
         $this->RegisterPropertyInteger('UpdateInterval', 30);
         $this->RegisterPropertyString('RegisterConfig', json_encode($defaultRegisters));
 
@@ -139,16 +139,16 @@ class SMARTFOX extends IPSModule
 
         switch ($this->GetVariableTypeFromRegister($register)) {
             case VARIABLETYPE_BOOLEAN:
-                $this->SetValueBoolean($ident, (bool) $value);
+                $this->SetValue($ident, (bool) $value);
                 break;
             case VARIABLETYPE_INTEGER:
-                $this->SetValueInteger($ident, (int) $value);
+                $this->SetValue($ident, (int) $value);
                 break;
             case VARIABLETYPE_FLOAT:
-                $this->SetValueFloat($ident, (float) $value);
+                $this->SetValue($ident, (float) $value);
                 break;
             default:
-                $this->SetValueString($ident, (string) $value);
+                $this->SetValue($ident, (string) $value);
                 break;
         }
 
@@ -269,7 +269,7 @@ class SMARTFOX extends IPSModule
 
         $words = $this->ReadHoldingRegisters($address, $length);
         if (count($words) !== $length) {
-            throw new Exception('Unerwartete Anzahl Register zurückgegeben');
+            throw new Exception('Unerwartete Anzahl Register zurückgegeben (erwartet: ' . $length . ', erhalten: ' . count($words) . ')');
         }
 
         $scale = (float) $register['Scale'];
@@ -413,9 +413,20 @@ class SMARTFOX extends IPSModule
 
         $byteCount = ord($response[8]);
         $data = substr($response, 9, $byteCount);
-        $words = array_values(unpack('n*', $data));
 
-        return $words;
+        if ((strlen($data) % 2) !== 0) {
+            $this->SendDebug('ModbusWarning', 'Ungerade Byte-Anzahl empfangen an Adresse ' . $address . ': ' . $byteCount, 0);
+            $data .= "\x00";
+        }
+
+        $unpacked = unpack('n*', $data);
+        if ($unpacked === false) {
+            return [];
+        }
+
+        $words = array_values($unpacked);
+
+        return array_slice($words, 0, $quantity);
     }
 
     private function WriteHoldingRegisters(int $address, array $words): void

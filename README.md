@@ -26,3 +26,6 @@ Vorkonfiguriert sind:
 - `uint8[6]` wird als Hex-String angezeigt
 - Schreibbar sind nur Register mit `RW`
 - Bei skalierten Werten wird beim Lesen multipliziert und beim Schreiben dividiert
+
+
+Hinweis: Bei SMARTFOX sollte die Adressbasis in dieser Version in der Regel auf 0 stehen, also die Dokumentationsadresse direkt verwendet werden (z. B. 40400, 41012).
