@@ -13,14 +13,38 @@ class SMARTFOX extends IPSModule
         $defaultRegisters = [
             [
                 'Enabled'      => true,
+                'Address'      => 40400,
+                'Name'         => 'Control via Modbus',
+                'Ident'        => 'ControlViaModbus',
+                'Type'         => 'uint8',
+                'Length'       => 1,
+                'Access'       => 'RW',
+                'Scale'        => 1,
+                'Unit'         => '',
+                'Description'  => '0=Automatic Control, 1=Control via Modbus'
+            ],
+            [
+                'Enabled'      => true,
+                'Address'      => 40401,
+                'Name'         => 'Control Analogout 1',
+                'Ident'        => 'ControlAnalogout1',
+                'Type'         => 'uint16',
+                'Length'       => 1,
+                'Access'       => 'RW',
+                'Scale'        => 0.1,
+                'Unit'         => '%',
+                'Description'  => 'Analog output 1 in %'
+            ],
+            [
+                'Enabled'      => true,
                 'Address'      => 41012,
                 'Name'         => 'Day Energy from grid',
                 'Ident'        => 'DayEnergyFromGrid',
                 'Type'         => 'uint32',
                 'Length'       => 2,
                 'Access'       => 'R',
-                'Scale'        => 1,
-                'Unit'         => 'Wh',
+                'Scale'        => 0.001,
+                'Unit'         => 'kWh',
                 'Description'  => ''
             ],
             [
@@ -31,8 +55,8 @@ class SMARTFOX extends IPSModule
                 'Type'         => 'uint32',
                 'Length'       => 2,
                 'Access'       => 'R',
-                'Scale'        => 1,
-                'Unit'         => 'Wh',
+                'Scale'        => 0.001,
+                'Unit'         => 'kWh',
                 'Description'  => ''
             ],
             [
@@ -49,27 +73,63 @@ class SMARTFOX extends IPSModule
             ],
             [
                 'Enabled'      => true,
-                'Address'      => 40400,
-                'Name'         => 'Control via Modbus',
-                'Ident'        => 'ControlViaModbus',
-                'Type'         => 'uint8',
-                'Length'       => 1,
-                'Access'       => 'RW',
-                'Scale'        => 1,
-                'Unit'         => '',
-                'Description'  => '0=Automatic Control, 1=Control via Modbus'
+                'Address'      => 41600,
+                'Name'         => 'Car charge 1 energy total',
+                'Ident'        => 'CarCharge1EnergyTotal',
+                'Type'         => 'uint64',
+                'Length'       => 4,
+                'Access'       => 'R',
+                'Scale'        => 0.001,
+                'Unit'         => 'kWh',
+                'Description'  => ''
             ],
             [
-                'Enabled'      => false,
-                'Address'      => 40403,
-                'Name'         => 'Control Relay 1',
-                'Ident'        => 'ControlRelay1',
+                'Enabled'      => true,
+                'Address'      => 41604,
+                'Name'         => 'Car charge 1 energy pres',
+                'Ident'        => 'CarCharge1EnergyPres',
+                'Type'         => 'uint32',
+                'Length'       => 2,
+                'Access'       => 'R',
+                'Scale'        => 0.001,
+                'Unit'         => 'kWh',
+                'Description'  => ''
+            ],
+            [
+                'Enabled'      => true,
+                'Address'      => 41606,
+                'Name'         => 'Car charge 1 power',
+                'Ident'        => 'CarCharge1Power',
+                'Type'         => 'uint32',
+                'Length'       => 2,
+                'Access'       => 'R',
+                'Scale'        => 1,
+                'Unit'         => 'W',
+                'Description'  => ''
+            ],
+            [
+                'Enabled'      => true,
+                'Address'      => 41608,
+                'Name'         => 'Car charge 1 charge mode',
+                'Ident'        => 'CarCharge1ChargeMode',
                 'Type'         => 'uint8',
                 'Length'       => 1,
                 'Access'       => 'RW',
                 'Scale'        => 1,
                 'Unit'         => '',
-                'Description'  => '0/1'
+                'Description'  => '0=surplus, 1=manual mode'
+            ],
+            [
+                'Enabled'      => true,
+                'Address'      => 41609,
+                'Name'         => 'Car charge 1 manual charging value',
+                'Ident'        => 'CarCharge1ManualChargingValue',
+                'Type'         => 'uint8',
+                'Length'       => 1,
+                'Access'       => 'RW',
+                'Scale'        => 1,
+                'Unit'         => '%',
+                'Description'  => '0..100 %'
             ]
         ];
 
@@ -110,6 +170,10 @@ class SMARTFOX extends IPSModule
             throw new Exception('Register ist nicht schreibbar: ' . $Ident);
         }
 
+        if ((string) $register['Ident'] !== 'ControlViaModbus') {
+            $this->EnsureControlViaModbusEnabled();
+        }
+
         $normalized = $this->NormalizeIncomingValue($register, $Value);
         $this->WriteRegister($register, $normalized);
         $this->UpdateSingleRegister($register);
@@ -117,6 +181,8 @@ class SMARTFOX extends IPSModule
 
     public function Update(): void
     {
+        $this->EnsureControlViaModbusEnabled();
+
         foreach ($this->GetRegisters() as $register) {
             try {
                 $this->UpdateSingleRegister($register);
@@ -125,6 +191,30 @@ class SMARTFOX extends IPSModule
                 $address = (int) $register['Address'];
                 $this->SendDebug('UpdateError', $name . ' [' . $address . ']: ' . $e->getMessage(), 0);
             }
+        }
+    }
+
+
+    private function EnsureControlViaModbusEnabled(): void
+    {
+        $register = $this->FindRegisterByIdent('ControlViaModbus');
+        if ($register === null) {
+            return;
+        }
+
+        try {
+            $value = $this->ReadRegister($register);
+            if ((int) $value === 0) {
+                $this->SendDebug('AutoWrite', 'Control via Modbus war 0 und wird auf 1 gesetzt', 0);
+                $this->WriteRegister($register, 1);
+                $value = 1;
+            }
+
+            if ($this->GetIDForIdent('ControlViaModbus')) {
+                $this->SetValue('ControlViaModbus', (int) $value);
+            }
+        } catch (Throwable $e) {
+            $this->SendDebug('AutoWriteError', 'Control via Modbus: ' . $e->getMessage(), 0);
         }
     }
 
@@ -661,11 +751,24 @@ class SMARTFOX extends IPSModule
             IPS_SetVariableProfileAssociation('SMARTFOX.Switch', true, 'Ein', '', -1);
         }
 
+        if (!IPS_VariableProfileExists('SMARTFOX.ControlViaModbus')) {
+            IPS_CreateVariableProfile('SMARTFOX.ControlViaModbus', VARIABLETYPE_INTEGER);
+            IPS_SetVariableProfileAssociation('SMARTFOX.ControlViaModbus', 0, 'Auto', '', -1);
+            IPS_SetVariableProfileAssociation('SMARTFOX.ControlViaModbus', 1, 'Modbus', '', -1);
+        }
+
+        if (!IPS_VariableProfileExists('SMARTFOX.CarChargeMode')) {
+            IPS_CreateVariableProfile('SMARTFOX.CarChargeMode', VARIABLETYPE_INTEGER);
+            IPS_SetVariableProfileAssociation('SMARTFOX.CarChargeMode', 0, 'Überschuss', '', -1);
+            IPS_SetVariableProfileAssociation('SMARTFOX.CarChargeMode', 1, 'Manuell', '', -1);
+        }
+
         $profiles = [
             'SMARTFOX.W'   => ['~Power', 0, ' W'],
             'SMARTFOX.Wh'  => ['~Electricity', 0, ' Wh'],
             'SMARTFOX.kWh' => ['~Electricity', 3, ' kWh'],
-            'SMARTFOX.Percent1' => ['', 1, ' %']
+            'SMARTFOX.Percent1' => ['', 1, ' %'],
+            'SMARTFOX.Celsius1' => ['', 1, ' °C']
         ];
 
         foreach ($profiles as $profileName => $config) {
@@ -679,19 +782,29 @@ class SMARTFOX extends IPSModule
         }
     }
 
+
     private function GetProfileForRegister(array $register, bool $isFloat): string
     {
-        $unit = strtolower(trim((string) ($register['Unit'] ?? '')));
-        $scale = (float) ($register['Scale'] ?? 1.0);
+        $ident = (string) ($register['Ident'] ?? '');
+        if ($ident === 'ControlViaModbus') {
+            return 'SMARTFOX.ControlViaModbus';
+        }
+        if ($ident === 'CarCharge1ChargeMode') {
+            return 'SMARTFOX.CarChargeMode';
+        }
+
+        return $this->GetProfileForUnit(trim((string) ($register['Unit'] ?? '')), $isFloat);
+    }
+
+    private function GetProfileForUnit(string $unit, bool $isFloat): string
+    {
+        $unit = strtolower($unit);
 
         if ($unit === 'w') {
             return $isFloat ? 'SMARTFOX.W' : '';
         }
 
         if ($unit === 'wh') {
-            if ($isFloat && abs($scale - 0.001) < 0.000001) {
-                return 'SMARTFOX.kWh';
-            }
             return $isFloat ? 'SMARTFOX.Wh' : '';
         }
 
@@ -701,6 +814,10 @@ class SMARTFOX extends IPSModule
 
         if ($unit === '%') {
             return 'SMARTFOX.Percent1';
+        }
+
+        if ($unit === '°c' || $unit === 'c') {
+            return 'SMARTFOX.Celsius1';
         }
 
         return '';
