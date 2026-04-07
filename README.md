@@ -1,25 +1,28 @@
 # SMARTFOX IP-Symcon Modul
 
-Dieses Modul liest SMARTFOX Register via Modbus TCP aus und kann konfigurierbare RW-Register auch schreiben.
+Dieses Modul liest und schreibt SMARTFOX Pro / Pro 2 Register per Modbus TCP.
 
-## Enthalten
-- Host / Port / Unit-ID konfigurierbar
-- Zyklisches Polling per Timer
-- Frei definierbare Registerliste
-- Datentypen: uint16, int16, uint32, int32, float32
-- Word-Order AB oder BA
-- Skalierungsfaktor
-- Lesen und Schreiben von Holding Registers
+## Wichtige Einstellung
+Die SMARTFOX Excel-Tabelle verwendet Registeradressen wie `41012`, `41018`, `40400`.
+In Modbus TCP muss häufig der Bereichsoffset `40000` abgezogen werden.
 
-## Installation
-1. Ordner `smartfox-module` in ein Repository oder lokales Modulverzeichnis kopieren.
-2. In IP-Symcon als Modul laden.
-3. Instanz `SMARTFOX` anlegen.
-4. IP-Adresse des SMARTFOX eintragen.
-5. Registerliste anpassen.
-6. "Jetzt aktualisieren" drücken.
+Darum ist im Modul standardmäßig eingestellt:
+
+- **Adressbasis = 40000**
+
+Beispiel:
+- Dokumentation: `41012`
+- Gesendete Modbus-Adresse: `1012`
+
+## Standardregister
+Vorkonfiguriert sind:
+- 41012 - Day Energy from grid
+- 41014 - Day Energy into grid
+- 41018 - Power total
+- 40400 - Control via Modbus
+- 40403 - Control Relay 1 (deaktiviert)
 
 ## Hinweise
-- Standardmäßig ist Modbus TCP auf Port 502 vorgesehen.
-- Ob ein Register wirklich schreibbar ist, muss mit der SMARTFOX-Registerliste des konkret installierten Geräts/Firmwarestands abgeglichen werden.
-- Bei 32-Bit Werten kann je nach Register ggf. `WordOrder = BA` nötig sein.
+- `uint8[6]` wird als Hex-String angezeigt
+- Schreibbar sind nur Register mit `RW`
+- Bei skalierten Werten wird beim Lesen multipliziert und beim Schreiben dividiert

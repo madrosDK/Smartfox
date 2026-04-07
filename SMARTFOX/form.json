@@ -13,7 +13,22 @@
     {
       "type": "NumberSpinner",
       "name": "UnitID",
-      "caption": "Unit ID"
+      "caption": "Unit-ID"
+    },
+    {
+      "type": "Select",
+      "name": "AddressBase",
+      "caption": "Adressbasis aus Dokumentation",
+      "options": [
+        {
+          "caption": "40000 (SMARTFOX Register wie 41012 -> gesendet wird 1012)",
+          "value": 40000
+        },
+        {
+          "caption": "0 (Adresse wird exakt wie eingetragen gesendet)",
+          "value": 0
+        }
+      ]
     },
     {
       "type": "NumberSpinner",
@@ -22,26 +37,36 @@
     },
     {
       "type": "List",
-      "name": "Registers",
+      "name": "RegisterConfig",
       "caption": "Register",
       "rowCount": 8,
       "add": true,
       "delete": true,
+      "sort": {
+        "column": "Address",
+        "direction": "ascending"
+      },
       "columns": [
         {
           "caption": "Aktiv",
           "name": "Enabled",
           "width": "60px",
-          "add": true,
           "edit": {
             "type": "CheckBox"
           }
         },
         {
+          "caption": "Adresse",
+          "name": "Address",
+          "width": "80px",
+          "edit": {
+            "type": "NumberSpinner"
+          }
+        },
+        {
           "caption": "Name",
           "name": "Name",
-          "width": "180px",
-          "add": "PV Power",
+          "width": "220px",
           "edit": {
             "type": "ValidationTextBox"
           }
@@ -49,42 +74,43 @@
         {
           "caption": "Ident",
           "name": "Ident",
-          "width": "140px",
-          "add": "PVPower",
+          "width": "160px",
           "edit": {
             "type": "ValidationTextBox"
           }
         },
         {
-          "caption": "Adresse",
-          "name": "Address",
-          "width": "90px",
-          "add": 96,
-          "edit": {
-            "type": "NumberSpinner"
-          }
-        },
-        {
           "caption": "Typ",
           "name": "Type",
-          "width": "100px",
-          "add": "int32",
+          "width": "90px",
           "edit": {
             "type": "Select",
             "options": [
+              {"caption": "bool", "value": "bool"},
+              {"caption": "uint8", "value": "uint8"},
               {"caption": "uint16", "value": "uint16"},
               {"caption": "int16", "value": "int16"},
               {"caption": "uint32", "value": "uint32"},
               {"caption": "int32", "value": "int32"},
-              {"caption": "float32", "value": "float32"}
+              {"caption": "uint64", "value": "uint64"},
+              {"caption": "float32", "value": "float32"},
+              {"caption": "uint8[6]", "value": "uint8[6]"},
+              {"caption": "string", "value": "string"}
             ]
+          }
+        },
+        {
+          "caption": "Länge",
+          "name": "Length",
+          "width": "60px",
+          "edit": {
+            "type": "NumberSpinner"
           }
         },
         {
           "caption": "Zugriff",
           "name": "Access",
           "width": "70px",
-          "add": "R",
           "edit": {
             "type": "Select",
             "options": [
@@ -94,34 +120,27 @@
           }
         },
         {
-          "caption": "Faktor",
-          "name": "Factor",
+          "caption": "Skalierung",
+          "name": "Scale",
           "width": "80px",
-          "add": 1,
           "edit": {
             "type": "NumberSpinner"
           }
         },
         {
-          "caption": "Profil",
-          "name": "Profile",
-          "width": "120px",
-          "add": "",
+          "caption": "Einheit",
+          "name": "Unit",
+          "width": "70px",
           "edit": {
             "type": "ValidationTextBox"
           }
         },
         {
-          "caption": "WordOrder",
-          "name": "WordOrder",
-          "width": "100px",
-          "add": "AB",
+          "caption": "Beschreibung",
+          "name": "Description",
+          "width": "250px",
           "edit": {
-            "type": "Select",
-            "options": [
-              {"caption": "AB (Standard)", "value": "AB"},
-              {"caption": "BA (Swap)", "value": "BA"}
-            ]
+            "type": "ValidationTextBox"
           }
         }
       ]
@@ -132,13 +151,10 @@
       "type": "Button",
       "caption": "Jetzt aktualisieren",
       "onClick": "SMARTFOX_Update($id);"
+    },
+    {
+      "type": "Label",
+      "caption": "Hinweis: Für die SMARTFOX-Tabelle ist normalerweise Adressbasis 40000 korrekt. Beispiel: 41012 in der Tabelle wird intern als 1012 gelesen."
     }
-  ],
-  "status": [
-    {"code": 101, "icon": "inactive", "caption": "Wird erstellt"},
-    {"code": 102, "icon": "active", "caption": "Aktiv"},
-    {"code": 104, "icon": "inactive", "caption": "Inaktiv"},
-    {"code": 200, "icon": "error", "caption": "Verbindung fehlgeschlagen"},
-    {"code": 201, "icon": "error", "caption": "Konfiguration fehlerhaft"}
   ]
 }

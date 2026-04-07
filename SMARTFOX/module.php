@@ -4,62 +4,81 @@ declare(strict_types=1);
 
 class SMARTFOX extends IPSModule
 {
-    private const DEFAULT_REGISTERS = [
-        [
-            'Enabled'   => true,
-            'Name'      => 'Day Energy From Grid',
-            'Ident'     => 'DayEnergyFromGrid',
-            'Address'   => 18,
-            'Type'      => 'uint32',
-            'Access'    => 'R',
-            'Factor'    => 1,
-            'Profile'   => '~Electricity',
-            'WordOrder' => 'AB'
-        ],
-        [
-            'Enabled'   => true,
-            'Name'      => 'Car Charge 1 Power',
-            'Ident'     => 'CarCharge1Power',
-            'Address'   => 68,
-            'Type'      => 'uint32',
-            'Access'    => 'RW',
-            'Factor'    => 1,
-            'Profile'   => '~Watt.3680',
-            'WordOrder' => 'AB'
-        ],
-        [
-            'Enabled'   => true,
-            'Name'      => 'Car Charge 1 Mode',
-            'Ident'     => 'CarCharge1Mode',
-            'Address'   => 69,
-            'Type'      => 'uint16',
-            'Access'    => 'RW',
-            'Factor'    => 1,
-            'Profile'   => '',
-            'WordOrder' => 'AB'
-        ],
-        [
-            'Enabled'   => true,
-            'Name'      => 'External Meter 1 Power',
-            'Ident'     => 'ExtMeter1Power',
-            'Address'   => 96,
-            'Type'      => 'int32',
-            'Access'    => 'R',
-            'Factor'    => 1,
-            'Profile'   => '~Watt.3680',
-            'WordOrder' => 'AB'
-        ]
-    ];
+    private const MODULE_ID = '{7A6C8F1C-1E5C-4A39-9B40-8A6C510AF165}';
 
     public function Create(): void
     {
         parent::Create();
 
+        $defaultRegisters = [
+            [
+                'Enabled'      => true,
+                'Address'      => 41012,
+                'Name'         => 'Day Energy from grid',
+                'Ident'        => 'DayEnergyFromGrid',
+                'Type'         => 'uint32',
+                'Length'       => 2,
+                'Access'       => 'R',
+                'Scale'        => 1,
+                'Unit'         => 'Wh',
+                'Description'  => ''
+            ],
+            [
+                'Enabled'      => true,
+                'Address'      => 41014,
+                'Name'         => 'Day Energy into grid',
+                'Ident'        => 'DayEnergyIntoGrid',
+                'Type'         => 'uint32',
+                'Length'       => 2,
+                'Access'       => 'R',
+                'Scale'        => 1,
+                'Unit'         => 'Wh',
+                'Description'  => ''
+            ],
+            [
+                'Enabled'      => true,
+                'Address'      => 41018,
+                'Name'         => 'Power total',
+                'Ident'        => 'PowerTotal',
+                'Type'         => 'int32',
+                'Length'       => 2,
+                'Access'       => 'R',
+                'Scale'        => 1,
+                'Unit'         => 'W',
+                'Description'  => ''
+            ],
+            [
+                'Enabled'      => true,
+                'Address'      => 40400,
+                'Name'         => 'Control via Modbus',
+                'Ident'        => 'ControlViaModbus',
+                'Type'         => 'uint8',
+                'Length'       => 1,
+                'Access'       => 'RW',
+                'Scale'        => 1,
+                'Unit'         => '',
+                'Description'  => '0=Automatic Control, 1=Control via Modbus'
+            ],
+            [
+                'Enabled'      => false,
+                'Address'      => 40403,
+                'Name'         => 'Control Relay 1',
+                'Ident'        => 'ControlRelay1',
+                'Type'         => 'uint8',
+                'Length'       => 1,
+                'Access'       => 'RW',
+                'Scale'        => 1,
+                'Unit'         => '',
+                'Description'  => '0/1'
+            ]
+        ];
+
         $this->RegisterPropertyString('Host', '192.168.1.100');
         $this->RegisterPropertyInteger('Port', 502);
         $this->RegisterPropertyInteger('UnitID', 1);
+        $this->RegisterPropertyInteger('AddressBase', 40000);
         $this->RegisterPropertyInteger('UpdateInterval', 30);
-        $this->RegisterPropertyString('Registers', json_encode(self::DEFAULT_REGISTERS));
+        $this->RegisterPropertyString('RegisterConfig', json_encode($defaultRegisters));
 
         $this->RegisterTimer('UpdateTimer', 0, 'SMARTFOX_Update($_IPS["TARGET"]);');
     }
@@ -68,17 +87,11 @@ class SMARTFOX extends IPSModule
     {
         parent::ApplyChanges();
 
-        $this->SetSummary($this->ReadPropertyString('Host') . ':' . $this->ReadPropertyInteger('Port'));
-        $this->SetTimerInterval('UpdateTimer', $this->ReadPropertyInteger('UpdateInterval') * 1000);
+        $this->MaintainProfiles();
+        $this->SyncVariables();
 
-        try {
-            $registers = $this->GetRegisters();
-            $this->SyncVariables($registers);
-            $this->SetStatus(102);
-        } catch (Throwable $e) {
-            $this->SendDebug(__FUNCTION__, $e->getMessage(), 0);
-            $this->SetStatus(201);
-        }
+        $interval = max(5, $this->ReadPropertyInteger('UpdateInterval'));
+        $this->SetTimerInterval('UpdateTimer', $interval * 1000);
     }
 
     public function RequestAction($Ident, $Value): void
@@ -88,7 +101,7 @@ class SMARTFOX extends IPSModule
             return;
         }
 
-        $register = $this->GetRegisterByIdent($Ident);
+        $register = $this->FindRegisterByIdent((string) $Ident);
         if ($register === null) {
             throw new Exception('Unbekannte Aktion: ' . $Ident);
         }
@@ -97,122 +110,147 @@ class SMARTFOX extends IPSModule
             throw new Exception('Register ist nicht schreibbar: ' . $Ident);
         }
 
-        $this->WriteRegisterValue($register, $Value);
-        $readBack = $this->ReadRegisterValue($register);
-        $this->SetValue($Ident, $readBack);
+        $normalized = $this->NormalizeIncomingValue($register, $Value);
+        $this->WriteRegister($register, $normalized);
+        $this->UpdateSingleRegister($register);
     }
 
     public function Update(): void
     {
-        $registers = $this->GetRegisters();
-
-        foreach ($registers as $register) {
-            if (!(bool) ($register['Enabled'] ?? false)) {
-                continue;
-            }
-
+        foreach ($this->GetRegisters() as $register) {
             try {
-                $value = $this->ReadRegisterValue($register);
-                $this->SetValue((string) $register['Ident'], $value);
-                $this->SendDebug('Update', sprintf('%s [%d] = %s', (string) $register['Ident'], (int) $register['Address'], (string) $value), 0);
-                $this->SetStatus(102);
+                $this->UpdateSingleRegister($register);
             } catch (Throwable $e) {
-                $this->SendDebug('UpdateError', sprintf('%s [%d]: %s', (string) $register['Ident'], (int) $register['Address'], $e->getMessage()), 0);
-                $this->SetStatus(200);
+                $name = (string) $register['Name'];
+                $address = (int) $register['Address'];
+                $this->SendDebug('UpdateError', $name . ' [' . $address . ']: ' . $e->getMessage(), 0);
             }
         }
     }
 
-    private function SyncVariables(array $registers): void
+    private function UpdateSingleRegister(array $register): void
     {
-        $activeIdents = [];
+        $ident = (string) $register['Ident'];
+        $value = $this->ReadRegister($register);
 
-        foreach ($registers as $register) {
-            if (!(bool) ($register['Enabled'] ?? false)) {
-                continue;
-            }
+        if (!$this->GetIDForIdent($ident)) {
+            return;
+        }
 
-            $ident = $this->NormalizeIdent((string) $register['Ident']);
-            $name = trim((string) $register['Name']);
-            if ($name === '') {
-                $name = $ident;
-            }
+        switch ($this->GetVariableTypeFromRegister($register)) {
+            case VARIABLETYPE_BOOLEAN:
+                $this->SetValueBoolean($ident, (bool) $value);
+                break;
+            case VARIABLETYPE_INTEGER:
+                $this->SetValueInteger($ident, (int) $value);
+                break;
+            case VARIABLETYPE_FLOAT:
+                $this->SetValueFloat($ident, (float) $value);
+                break;
+            default:
+                $this->SetValueString($ident, (string) $value);
+                break;
+        }
 
-            $type = strtolower((string) $register['Type']);
-            $profile = trim((string) ($register['Profile'] ?? ''));
+        $this->SendDebug('Update', (string) $register['Name'] . ' [' . (string) $register['Address'] . '] = ' . (string) $value, 0);
+    }
 
-            switch ($type) {
-                case 'uint16':
-                case 'int16':
-                case 'uint32':
-                case 'int32':
-                    $this->RegisterVariableInteger($ident, $name, $profile);
+    private function SyncVariables(): void
+    {
+        $validIdents = [];
+        foreach ($this->GetRegisters() as $register) {
+            $ident = (string) $register['Ident'];
+            $validIdents[] = $ident;
+            $name = (string) $register['Name'];
+            $unit = trim((string) $register['Unit']);
+
+            switch ($this->GetVariableTypeFromRegister($register)) {
+                case VARIABLETYPE_BOOLEAN:
+                    $this->RegisterVariableBoolean($ident, $name, 'SMARTFOX.Switch');
                     break;
-                case 'float32':
-                    $this->RegisterVariableFloat($ident, $name, $profile);
+                case VARIABLETYPE_INTEGER:
+                    $this->RegisterVariableInteger($ident, $name, $this->GetProfileForUnit($unit, false));
+                    break;
+                case VARIABLETYPE_FLOAT:
+                    $this->RegisterVariableFloat($ident, $name, $this->GetProfileForUnit($unit, true));
                     break;
                 default:
-                    throw new Exception('Nicht unterstützter Datentyp: ' . $type);
+                    $this->RegisterVariableString($ident, $name, '');
+                    break;
             }
 
-            if (strtoupper((string) $register['Access']) === 'RW') {
+            if (strtoupper((string) $register['Access']) === 'RW' && $this->IsTypeWritable((string) $register['Type'])) {
                 $this->EnableAction($ident);
             }
-
-            $activeIdents[] = $ident;
         }
 
         foreach (IPS_GetChildrenIDs($this->InstanceID) as $childId) {
-            $obj = IPS_GetObject($childId);
-            if ($obj['ObjectType'] !== OBJECTTYPE_VARIABLE) {
+            $child = IPS_GetObject($childId);
+            if ($child['ObjectType'] !== OBJECTTYPE_VARIABLE) {
                 continue;
             }
 
-            if (!in_array($obj['ObjectIdent'], $activeIdents, true)) {
-                @IPS_SetHidden($childId, true);
-            } else {
-                @IPS_SetHidden($childId, false);
+            $childIdent = IPS_GetObject($childId)['ObjectIdent'];
+            if ($childIdent !== '' && !in_array($childIdent, $validIdents, true)) {
+                $this->UnregisterVariable($childIdent);
             }
         }
     }
 
     private function GetRegisters(): array
     {
-        $json = $this->ReadPropertyString('Registers');
-        $registers = json_decode($json, true);
-
-        if (!is_array($registers)) {
-            throw new Exception('Registers ist kein gültiges JSON');
+        $json = $this->ReadPropertyString('RegisterConfig');
+        $decoded = json_decode($json, true);
+        if (!is_array($decoded)) {
+            return [];
         }
 
-        $normalized = [];
-        foreach ($registers as $index => $register) {
-            if (!is_array($register)) {
-                throw new Exception('Registereintrag #' . $index . ' ist ungültig');
+        $result = [];
+        foreach ($decoded as $row) {
+            if (!is_array($row)) {
+                continue;
             }
 
-            $ident = $this->NormalizeIdent((string) ($register['Ident'] ?? ''));
+            $enabled = $row['Enabled'] ?? true;
+            if ((bool) $enabled === false) {
+                continue;
+            }
+
+            $name = trim((string) ($row['Name'] ?? ''));
+            $address = (int) ($row['Address'] ?? 0);
+            if ($name === '' || $address <= 0) {
+                continue;
+            }
+
+            $type = strtolower(trim((string) ($row['Type'] ?? 'uint16')));
+            $length = (int) ($row['Length'] ?? $this->GetDefaultLengthForType($type));
+            if ($length <= 0) {
+                $length = $this->GetDefaultLengthForType($type);
+            }
+
+            $ident = trim((string) ($row['Ident'] ?? ''));
             if ($ident === '') {
-                throw new Exception('Leerer Ident in Registereintrag #' . $index);
+                $ident = $this->MakeIdent($name);
             }
 
-            $normalized[] = [
-                'Enabled'   => (bool) ($register['Enabled'] ?? false),
-                'Name'      => (string) ($register['Name'] ?? $ident),
-                'Ident'     => $ident,
-                'Address'   => (int) ($register['Address'] ?? 0),
-                'Type'      => strtolower((string) ($register['Type'] ?? 'uint16')),
-                'Access'    => strtoupper((string) ($register['Access'] ?? 'R')),
-                'Factor'    => (float) ($register['Factor'] ?? 1),
-                'Profile'   => (string) ($register['Profile'] ?? ''),
-                'WordOrder' => strtoupper((string) ($register['WordOrder'] ?? 'AB'))
+            $result[] = [
+                'Enabled'     => true,
+                'Address'     => $address,
+                'Name'        => $name,
+                'Ident'       => $this->MakeIdent($ident),
+                'Type'        => $type,
+                'Length'      => $length,
+                'Access'      => strtoupper(trim((string) ($row['Access'] ?? 'R'))),
+                'Scale'       => (float) ($row['Scale'] ?? 1),
+                'Unit'        => trim((string) ($row['Unit'] ?? '')),
+                'Description' => trim((string) ($row['Description'] ?? ''))
             ];
         }
 
-        return $normalized;
+        return $result;
     }
 
-    private function GetRegisterByIdent(string $ident): ?array
+    private function FindRegisterByIdent(string $ident): ?array
     {
         foreach ($this->GetRegisters() as $register) {
             if ((string) $register['Ident'] === $ident) {
@@ -223,171 +261,192 @@ class SMARTFOX extends IPSModule
         return null;
     }
 
-    private function ReadRegisterValue(array $register)
+    private function ReadRegister(array $register)
     {
-        $address = (int) $register['Address'];
-        $type = strtolower((string) $register['Type']);
-        $factor = (float) $register['Factor'];
-        $wordOrder = strtoupper((string) ($register['WordOrder'] ?? 'AB'));
+        $type = (string) $register['Type'];
+        $address = $this->ToModbusAddress((int) $register['Address']);
+        $length = (int) $register['Length'];
 
-        $quantity = $this->GetRegisterWordCount($type);
-        $words = $this->ModbusReadHoldingRegisters($address, $quantity);
-        $value = $this->WordsToValue($words, $type, $wordOrder);
-
-        if ($factor !== 1.0) {
-            $value = $value * $factor;
+        $words = $this->ReadHoldingRegisters($address, $length);
+        if (count($words) !== $length) {
+            throw new Exception('Unerwartete Anzahl Register zurückgegeben');
         }
 
-        if ($type === 'float32') {
+        $scale = (float) $register['Scale'];
+        if ($scale == 0.0) {
+            $scale = 1.0;
+        }
+
+        switch ($type) {
+            case 'bool':
+                return ((int) $words[0]) === 1;
+
+            case 'uint8':
+                return (int) ($words[0] & 0xFF);
+
+            case 'uint16':
+                $value = (int) $words[0];
+                break;
+
+            case 'int16':
+                $value = $this->ToSigned16((int) $words[0]);
+                break;
+
+            case 'uint32':
+                $value = $this->CombineUInt32($words);
+                break;
+
+            case 'int32':
+                $value = $this->ToSigned32($this->CombineUInt32($words));
+                break;
+
+            case 'uint64':
+                $value = $this->CombineUInt64($words);
+                break;
+
+            case 'float32':
+                $value = $this->CombineFloat32($words);
+                break;
+
+            case 'uint8[6]':
+                return $this->DecodeUint8Array($words);
+
+            case 'string':
+                return $this->DecodeString($words);
+
+            default:
+                throw new Exception('Nicht unterstützter Typ: ' . $type);
+        }
+
+        if ($scale !== 1.0) {
+            $value = $value * $scale;
+        }
+
+        if ($this->GetVariableTypeFromRegister($register) === VARIABLETYPE_FLOAT) {
             return (float) $value;
         }
 
-        return (int) round((float) $value);
+        return $value;
     }
 
-    private function WriteRegisterValue(array $register, $value): void
+    private function WriteRegister(array $register, $value): void
     {
-        $address = (int) $register['Address'];
-        $type = strtolower((string) $register['Type']);
-        $factor = (float) $register['Factor'];
-        $wordOrder = strtoupper((string) ($register['WordOrder'] ?? 'AB'));
-
-        $rawValue = $value;
-        if ($factor !== 0.0 && $factor !== 1.0) {
-            $rawValue = (float) $value / $factor;
+        $type = (string) $register['Type'];
+        $scale = (float) $register['Scale'];
+        if ($scale == 0.0) {
+            $scale = 1.0;
         }
 
-        $words = $this->ValueToWords($rawValue, $type, $wordOrder);
-        $this->ModbusWriteHoldingRegisters($address, $words);
-    }
+        if ($scale !== 1.0) {
+            $value = $value / $scale;
+        }
 
-    private function GetRegisterWordCount(string $type): int
-    {
+        $words = [];
         switch ($type) {
-            case 'uint16':
-            case 'int16':
-                return 1;
-            case 'uint32':
-            case 'int32':
-            case 'float32':
-                return 2;
-        }
-
-        throw new Exception('Unbekannter Datentyp: ' . $type);
-    }
-
-    private function WordsToValue(array $words, string $type, string $wordOrder)
-    {
-        if ($wordOrder === 'BA' && count($words) === 2) {
-            $words = [$words[1], $words[0]];
-        }
-
-        switch ($type) {
-            case 'uint16':
-                return (int) $words[0];
-            case 'int16':
-                return $this->ToSigned16((int) $words[0]);
-            case 'uint32':
-                return (int) ((((int) $words[0]) << 16) | ((int) $words[1]));
-            case 'int32':
-                return $this->ToSigned32((int) ((((int) $words[0]) << 16) | ((int) $words[1])));
-            case 'float32':
-                $bin = pack('n*', (int) $words[0], (int) $words[1]);
-                return unpack('G', $bin)[1];
-        }
-
-        throw new Exception('Nicht unterstützter Datentyp: ' . $type);
-    }
-
-    private function ValueToWords($value, string $type, string $wordOrder): array
-    {
-        switch ($type) {
+            case 'bool':
+            case 'uint8':
             case 'uint16':
             case 'int16':
                 $words = [((int) $value) & 0xFFFF];
                 break;
+
             case 'uint32':
             case 'int32':
-                $intValue = (int) round((float) $value);
+                $intValue = (int) $value;
                 if ($intValue < 0) {
                     $intValue = $intValue & 0xFFFFFFFF;
                 }
-                $words = [($intValue >> 16) & 0xFFFF, $intValue & 0xFFFF];
+                $words = [
+                    ($intValue >> 16) & 0xFFFF,
+                    $intValue & 0xFFFF
+                ];
                 break;
+
+            case 'uint64':
+                $words = $this->SplitUInt64((int) $value);
+                break;
+
             case 'float32':
-                $packed = pack('G', (float) $value);
-                $words = array_values(unpack('n*', $packed));
+                $words = $this->SplitFloat32((float) $value);
                 break;
+
             default:
-                throw new Exception('Nicht unterstützter Datentyp: ' . $type);
+                throw new Exception('Schreiben für Typ nicht unterstützt: ' . $type);
         }
 
-        if ($wordOrder === 'BA' && count($words) === 2) {
-            $words = [$words[1], $words[0]];
-        }
-
-        return $words;
+        $this->WriteHoldingRegisters($this->ToModbusAddress((int) $register['Address']), $words);
     }
 
-    private function ModbusReadHoldingRegisters(int $address, int $quantity): array
+    private function ReadHoldingRegisters(int $address, int $quantity): array
     {
         $host = $this->ReadPropertyString('Host');
         $port = $this->ReadPropertyInteger('Port');
         $unitId = $this->ReadPropertyInteger('UnitID');
 
         $transactionId = random_int(1, 65535);
-        $packet = pack('nnnCCnn', $transactionId, 0, 6, $unitId, 0x03, $address, $quantity);
+        $functionCode = 3;
+        $pdu = pack('Cnn', $functionCode, $address, $quantity);
+        $packet = pack('nnnC', $transactionId, 0, strlen($pdu) + 1, $unitId) . $pdu;
 
         $response = $this->SendModbusPacket($host, $port, $packet);
-        if (strlen($response) < 9) {
-            throw new Exception('Antwort zu kurz');
+
+        $transactionIdResponse = unpack('n', substr($response, 0, 2))[1];
+        if ($transactionIdResponse !== $transactionId) {
+            throw new Exception('Ungültige Transaktions-ID in Antwort');
         }
 
-        $header = unpack('ntransaction/nprotocol/nlength/Cunit/Cfunction/CbyteCount', substr($response, 0, 9));
-        if ((int) $header['function'] === 0x83) {
-            $exceptionCode = ord(substr($response, 8, 1));
-            throw new Exception('Modbus Exception ' . $exceptionCode);
-        }
-        if ((int) $header['function'] !== 0x03) {
-            throw new Exception('Unerwarteter Funktionscode ' . $header['function']);
+        $unit = ord($response[6]);
+        $function = ord($response[7]);
+
+        if ($unit !== $unitId) {
+            throw new Exception('Antwort von unerwarteter Unit-ID');
         }
 
-        $data = substr($response, 9, (int) $header['byteCount']);
+        if ($function === ($functionCode | 0x80)) {
+            $exceptionCode = ord($response[8]);
+            throw new Exception('Modbus Exception Code ' . $exceptionCode);
+        }
+
+        if ($function !== $functionCode) {
+            throw new Exception('Unerwarteter Funktionscode: ' . $function);
+        }
+
+        $byteCount = ord($response[8]);
+        $data = substr($response, 9, $byteCount);
         $words = array_values(unpack('n*', $data));
-        if (count($words) !== $quantity) {
-            throw new Exception('Unerwartete Anzahl Register zurückgegeben');
-        }
 
         return $words;
     }
 
-    private function ModbusWriteHoldingRegisters(int $address, array $words): void
+    private function WriteHoldingRegisters(int $address, array $words): void
     {
         $host = $this->ReadPropertyString('Host');
         $port = $this->ReadPropertyInteger('Port');
         $unitId = $this->ReadPropertyInteger('UnitID');
 
+        $transactionId = random_int(1, 65535);
+        $functionCode = 16;
         $quantity = count($words);
         $byteCount = $quantity * 2;
         $payload = '';
+
         foreach ($words as $word) {
-            $payload .= pack('n', (int) $word);
+            $payload .= pack('n', ((int) $word) & 0xFFFF);
         }
 
-        $transactionId = random_int(1, 65535);
-        $packet = pack('nnnCCnnC', $transactionId, 0, 7 + $byteCount, $unitId, 0x10, $address, $quantity, $byteCount) . $payload;
+        $pdu = pack('CnnC', $functionCode, $address, $quantity, $byteCount) . $payload;
+        $packet = pack('nnnC', $transactionId, 0, strlen($pdu) + 1, $unitId) . $pdu;
 
         $response = $this->SendModbusPacket($host, $port, $packet);
-        if (strlen($response) < 12) {
-            throw new Exception('Schreibantwort zu kurz');
+
+        $function = ord($response[7]);
+        if ($function === ($functionCode | 0x80)) {
+            $exceptionCode = ord($response[8]);
+            throw new Exception('Modbus Exception Code ' . $exceptionCode);
         }
 
-        $header = unpack('ntransaction/nprotocol/nlength/Cunit/Cfunction/nstart/nquantity', substr($response, 0, 12));
-        if ((int) $header['function'] === 0x90) {
-            throw new Exception('Modbus Schreibfehler');
-        }
-        if ((int) $header['function'] !== 0x10) {
-            throw new Exception('Unerwarteter Funktionscode ' . $header['function']);
+        if ($function !== $functionCode) {
+            throw new Exception('Unerwarteter Funktionscode beim Schreiben: ' . $function);
         }
     }
 
@@ -421,9 +480,9 @@ class SMARTFOX extends IPSModule
         }
 
         $mbap = unpack('ntransaction/nprotocol/nlength', $header);
-        $remaining = (int) $mbap['length']; // Unit-ID + PDU
-        $body = '';
+        $remaining = (int) $mbap['length'];
 
+        $body = '';
         while (strlen($body) < $remaining) {
             $chunk = fread($socket, $remaining - strlen($body));
             if ($chunk === false || $chunk === '') {
@@ -437,28 +496,140 @@ class SMARTFOX extends IPSModule
             $body .= $chunk;
         }
 
-        $meta = stream_get_meta_data($socket);
         fclose($socket);
-
-        if ($meta['timed_out']) {
-            throw new Exception('Zeitüberschreitung beim Lesen der Antwort');
-        }
 
         return $header . $body;
     }
 
-    private function NormalizeIdent(string $ident): string
+    private function ToModbusAddress(int $documentAddress): int
     {
-        $ident = preg_replace('/[^a-zA-Z0-9_]/', '', $ident) ?? '';
-        if ($ident === '') {
-            return '';
+        $base = $this->ReadPropertyInteger('AddressBase');
+        return max(0, $documentAddress - $base);
+    }
+
+    private function GetVariableTypeFromRegister(array $register): int
+    {
+        $type = (string) $register['Type'];
+        $scale = (float) $register['Scale'];
+
+        if ($type === 'bool') {
+            return VARIABLETYPE_BOOLEAN;
         }
 
-        if (preg_match('/^[0-9]/', $ident) === 1) {
-            $ident = 'R' . $ident;
+        if ($type === 'uint8[6]' || $type === 'string') {
+            return VARIABLETYPE_STRING;
         }
 
-        return $ident;
+        if ($type === 'float32' || abs($scale - 1.0) > 0.000001) {
+            return VARIABLETYPE_FLOAT;
+        }
+
+        return VARIABLETYPE_INTEGER;
+    }
+
+    private function IsTypeWritable(string $type): bool
+    {
+        return in_array(strtolower($type), ['bool', 'uint8', 'uint16', 'int16', 'uint32', 'int32', 'uint64', 'float32'], true);
+    }
+
+    private function NormalizeIncomingValue(array $register, $value)
+    {
+        switch ($this->GetVariableTypeFromRegister($register)) {
+            case VARIABLETYPE_BOOLEAN:
+                return (bool) $value;
+            case VARIABLETYPE_FLOAT:
+                return (float) $value;
+            case VARIABLETYPE_INTEGER:
+                return (int) $value;
+            default:
+                return (string) $value;
+        }
+    }
+
+    private function MakeIdent(string $value): string
+    {
+        $value = preg_replace('/[^A-Za-z0-9_]/', '', str_replace(' ', '', $value));
+        if ($value === null || $value === '') {
+            $value = 'Reg' . mt_rand(1000, 9999);
+        }
+        if (preg_match('/^[0-9]/', $value)) {
+            $value = 'R' . $value;
+        }
+
+        return $value;
+    }
+
+    private function GetDefaultLengthForType(string $type): int
+    {
+        switch (strtolower($type)) {
+            case 'uint32':
+            case 'int32':
+            case 'float32':
+                return 2;
+            case 'uint64':
+                return 4;
+            case 'uint8[6]':
+                return 3;
+            default:
+                return 1;
+        }
+    }
+
+    private function CombineUInt32(array $words): int
+    {
+        return (((int) $words[0] & 0xFFFF) << 16) | ((int) $words[1] & 0xFFFF);
+    }
+
+    private function CombineUInt64(array $words): int
+    {
+        return ((((int) $words[0] & 0xFFFF) << 48)
+            | (((int) $words[1] & 0xFFFF) << 32)
+            | (((int) $words[2] & 0xFFFF) << 16)
+            | ((int) $words[3] & 0xFFFF));
+    }
+
+    private function CombineFloat32(array $words): float
+    {
+        $bin = pack('n*', (int) $words[0], (int) $words[1]);
+        return (float) unpack('G', $bin)[1];
+    }
+
+    private function SplitUInt64(int $value): array
+    {
+        return [
+            ($value >> 48) & 0xFFFF,
+            ($value >> 32) & 0xFFFF,
+            ($value >> 16) & 0xFFFF,
+            $value & 0xFFFF
+        ];
+    }
+
+    private function SplitFloat32(float $value): array
+    {
+        $packed = pack('G', $value);
+        $unpacked = unpack('n2', $packed);
+        return array_values($unpacked);
+    }
+
+    private function DecodeUint8Array(array $words): string
+    {
+        $bytes = '';
+        foreach ($words as $word) {
+            $bytes .= sprintf('%02X:%02X:', ($word >> 8) & 0xFF, $word & 0xFF);
+        }
+
+        return rtrim($bytes, ':');
+    }
+
+    private function DecodeString(array $words): string
+    {
+        $text = '';
+        foreach ($words as $word) {
+            $text .= chr(($word >> 8) & 0xFF);
+            $text .= chr($word & 0xFF);
+        }
+
+        return trim($text, "\x00 \t\r\n");
     }
 
     private function ToSigned16(int $value): int
@@ -469,5 +640,54 @@ class SMARTFOX extends IPSModule
     private function ToSigned32(int $value): int
     {
         return ($value & 0x80000000) ? $value - 0x100000000 : $value;
+    }
+
+    private function MaintainProfiles(): void
+    {
+        if (!IPS_VariableProfileExists('SMARTFOX.Switch')) {
+            IPS_CreateVariableProfile('SMARTFOX.Switch', VARIABLETYPE_BOOLEAN);
+            IPS_SetVariableProfileAssociation('SMARTFOX.Switch', false, 'Aus', '', -1);
+            IPS_SetVariableProfileAssociation('SMARTFOX.Switch', true, 'Ein', '', -1);
+        }
+
+        $profiles = [
+            'SMARTFOX.W'   => ['~Power', 0, ' W'],
+            'SMARTFOX.Wh'  => ['~Electricity', 0, ' Wh'],
+            'SMARTFOX.kWh' => ['~Electricity', 3, ' kWh'],
+            'SMARTFOX.Percent1' => ['', 1, ' %']
+        ];
+
+        foreach ($profiles as $profileName => $config) {
+            if (IPS_VariableProfileExists($profileName)) {
+                continue;
+            }
+
+            IPS_CreateVariableProfile($profileName, VARIABLETYPE_FLOAT);
+            IPS_SetVariableProfileDigits($profileName, $config[1]);
+            IPS_SetVariableProfileText($profileName, '', $config[2]);
+        }
+    }
+
+    private function GetProfileForUnit(string $unit, bool $isFloat): string
+    {
+        $unit = strtolower($unit);
+
+        if ($unit === 'w') {
+            return $isFloat ? 'SMARTFOX.W' : '';
+        }
+
+        if ($unit === 'wh') {
+            return $isFloat ? 'SMARTFOX.Wh' : '';
+        }
+
+        if ($unit === 'kwh') {
+            return 'SMARTFOX.kWh';
+        }
+
+        if ($unit === '%') {
+            return 'SMARTFOX.Percent1';
+        }
+
+        return '';
     }
 }
