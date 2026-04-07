@@ -583,13 +583,22 @@ class SMARTFOX extends IPSModule
         $response = $this->SendModbusPacket($host, $port, $packet);
 
         $function = ord($response[7]);
-        if ($function === ($functionCode | 0x80)) {
-            $exceptionCode = ord($response[8]);
-            throw new Exception('Modbus Exception Code ' . $exceptionCode . ' bei FC6');
+
+        if ($function >= 0x80) {
+            $exceptionCode = isset($response[8]) ? ord($response[8]) : -1;
+            throw new Exception(
+                'Modbus Exception bei FC6: Function=' . $function .
+                ' BaseFunction=' . ($function - 128) .
+                ' ExceptionCode=' . $exceptionCode .
+                ' Raw=' . strtoupper(bin2hex($response))
+            );
         }
 
         if ($function !== $functionCode) {
-            throw new Exception('Unerwarteter Funktionscode beim Schreiben: ' . $function);
+            throw new Exception(
+                'Unerwarteter Funktionscode beim Schreiben: ' . $function .
+                ' Raw=' . strtoupper(bin2hex($response))
+            );
         }
         if ($function >= 128) {
           $exceptionCode = ord($response[8]);
@@ -625,13 +634,22 @@ class SMARTFOX extends IPSModule
         $response = $this->SendModbusPacket($host, $port, $packet);
 
         $function = ord($response[7]);
-        if ($function === ($functionCode | 0x80)) {
-            $exceptionCode = ord($response[8]);
-            throw new Exception('Modbus Exception Code ' . $exceptionCode . ' bei FC16');
+
+        if ($function >= 0x80) {
+            $exceptionCode = isset($response[8]) ? ord($response[8]) : -1;
+            throw new Exception(
+                'Modbus Exception bei FC16: Function=' . $function .
+                ' BaseFunction=' . ($function - 128) .
+                ' ExceptionCode=' . $exceptionCode .
+                ' Raw=' . strtoupper(bin2hex($response))
+            );
         }
 
         if ($function !== $functionCode) {
-            throw new Exception('Unerwarteter Funktionscode beim Schreiben: ' . $function);
+            throw new Exception(
+                'Unerwarteter Funktionscode beim Schreiben: ' . $function .
+                ' Raw=' . strtoupper(bin2hex($response))
+            );
         }
     }
 
