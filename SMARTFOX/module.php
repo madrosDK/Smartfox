@@ -532,6 +532,7 @@ class SMARTFOX extends IPSModule
 
     private function WriteHoldingRegisters(int $address, array $words): void
     {
+        $this->SendDebug('WriteHoldingRegisters', 'Words=' . count($words), 0);
         $host = $this->ReadPropertyString('Host');
         $port = $this->ReadPropertyInteger('Port');
         $unitId = $this->ReadPropertyInteger('UnitID');
@@ -542,6 +543,7 @@ class SMARTFOX extends IPSModule
         // Einzelregister -> Function Code 6
         if ($quantity === 1) {
             $functionCode = 6;
+            $this->SendDebug('WriteHoldingRegisters', 'Using FC6 for address ' . $address, 0);
             $value = ((int) $words[0]) & 0xFFFF;
 
             $pdu = pack('Cnn', $functionCode, $address, $value);
