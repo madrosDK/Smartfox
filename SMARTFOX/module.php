@@ -520,71 +520,63 @@ class SMARTFOX extends IPSModule
     }
 
     private function WriteHoldingRegisters(int $address, array $words): void
-  {
-      $host = $this->ReadPropertyString('Host');
-      $port = $this->ReadPropertyInteger('Port');
-      $unitId = $this->ReadPropertyInteger('UnitID');
+{
+    $host = $this->ReadPropertyString('Host');
+    $port = $this->ReadPropertyInteger('Port');
+    $unitId = $this->ReadPropertyInteger('UnitID');
 
-      $transactionId = random_int(1, 65535);
-      $quantity = count($words);
+    $transactionId = random_int(1, 65535);
+    $quantity = count($words);
 
-      if ($quantity === 1) {
-          // Function Code 6 = Write Single Register
-          $functionCode = 6;
-          $value = ((int) $words[0]) & 0xFFFF;
-          $pdu = pack('Cnn', $functionCode, $address, $value);
-          $packet = pack('nnnC', $transactionId, 0, strlen($pdu) + 1, $unitId) . $pdu;
+    // 👉 EIN REGISTER → FC6
+    if ($quantity === 1) {
+        $functionCode = 6;
+        $value = ((int)$words[0]) & 0xFFFF;
 
-          $response = $this->SendModbusPacket($host, $port, $packet);
+        $pdu = pack('Cnn', $functionCode, $address, $value);
+        $packet = pack('nnnC', $transactionId, 0, strlen($pdu) + 1, $unitId) . $pdu;
 
-          $function = ord($response[7]);
-          if ($function === ($functionCode | 0x80)) {
-              $exceptionCode = ord($response[8]);
-              throw new Exception('Modbus Exception Code ' . $exceptionCode);
-          }
+        $response = $this->SendModbusPacket($host, $port, $packet);
 
-          if ($function !== $functionCode) {
-              throw new Exception('Unerwarteter Funktionscode beim Schreiben: ' . $function);
-          }
+        $function = ord($response[7]);
 
-          $respAddress = unpack('n', substr($response, 8, 2))[1];
-          $respValue   = unpack('n', substr($response, 10, 2))[1];
+        if ($function === ($functionCode | 0x80)) {
+            $exceptionCode = ord($response[8]);
+            throw new Exception('Modbus Exception Code ' . $exceptionCode);
+        }
 
-          if ($respAddress !== $address) {
-              throw new Exception('Schreibantwort enthält unerwartete Adresse');
-          }
+        if ($function !== $functionCode) {
+            throw new Exception('Unerwarteter Funktionscode beim Schreiben: ' . $function);
+        }
 
-          if ($respValue !== $value) {
-              throw new Exception('Schreibantwort enthält unerwarteten Wert');
-          }
+        return;
+    }
 
-          return;
-      }
+    // 👉 MEHRERE REGISTER → FC16
+    $functionCode = 16;
+    $byteCount = $quantity * 2;
+    $payload = '';
 
-      // Function Code 16 = Write Multiple Registers
-      $functionCode = 16;
-      $byteCount = $quantity * 2;
-      $payload = '';
+    foreach ($words as $word) {
+        $payload .= pack('n', ((int)$word) & 0xFFFF);
+    }
 
-      foreach ($words as $word) {
-          $payload .= pack('n', ((int) $word) & 0xFFFF);
-      }
+    $pdu = pack('CnnC', $functionCode, $address, $quantity, $byteCount) . $payload;
+    $packet = pack('nnnC', $transactionId, 0, strlen($pdu) + 1, $unitId) . $pdu;
 
-      $pdu = pack('CnnC', $functionCode, $address, $quantity, $byteCount) . $payload;
-      $packet = pack('nnnC', $transactionId, 0, strlen($pdu) + 1, $unitId) . $pdu;
+    $response = $this->SendModbusPacket($host, $port, $packet);
 
-      $response = $this->SendModbusPacket($host, $port, $packet);
+    $function = ord($response[7]);
 
-      $function = ord($response[7]);
-      if ($function === ($functionCode | 0x80)) {
-          $exceptionCode = ord($response[8]);
-          throw new Exception('Modbus Exception Code ' . $exceptionCode);
-      }
+    if ($function === ($functionCode | 0x80)) {
+        $exceptionCode = ord($response[8]);
+        throw new Exception('Modbus Exception Code ' . $exceptionCode);
+    }
 
-      if ($function !== $functionCode) {
-          throw new Exception('Unerwarteter Funktionscode beim Schreiben: ' . $function);
-      }
-  }
+    if ($function !== $functionCode) {
+        throw new Exception('Unerwarteter Funktionscode beim Schreiben: ' . $function);
+    }
+}
 
     private function SendModbusPacket(string $host, int $port, string $packet): string
     {
