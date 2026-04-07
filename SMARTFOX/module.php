@@ -444,18 +444,3 @@ class SMARTFOX extends IPSModule
         return ($value & 0x80000000) ? $value - 0x100000000 : $value;
     }
 }
-
-function SMARTFOX_Update(int $InstanceID): void
-{
-    $module = IPS_GetInstance($InstanceID);
-    if ($module['ModuleInfo']['ModuleID'] !== '{7A6C8F1C-1E5C-4A39-9B40-8A6C510AF165}') {
-        return;
-    }
-
-    SMARTFOX_UpdateEx($InstanceID);
-}
-
-function SMARTFOX_UpdateEx(int $InstanceID): void
-{
-    IPS_RequestAction($InstanceID, 'UpdateNow', true);
-}
