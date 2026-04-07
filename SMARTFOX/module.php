@@ -109,7 +109,7 @@ class SMARTFOX extends IPSModule
             ],
             [
                 'Enabled'      => true,
-                'Address'      => 41608,
+                'Address'      => 41607,
                 'Name'         => 'Car charge 1 charge mode',
                 'Ident'        => 'CarCharge1ChargeMode',
                 'Type'         => 'uint16',
@@ -121,7 +121,7 @@ class SMARTFOX extends IPSModule
             ],
             [
                 'Enabled'      => true,
-                'Address'      => 41609,
+                'Address'      => 41608,
                 'Name'         => 'Car charge 1 manual charging value',
                 'Ident'        => 'CarCharge1ManualChargingValue',
                 'Type'         => 'uint8',
