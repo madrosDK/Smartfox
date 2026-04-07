@@ -423,6 +423,8 @@ class SMARTFOX extends IPSModule
     {
         $type = strtolower((string) $register['Type']);
         $scale = (float) $register['Scale'];
+        $address = (int) $register['Address'];
+
         if ($scale == 0.0) {
             $scale = 1.0;
         }
@@ -467,15 +469,35 @@ class SMARTFOX extends IPSModule
 
         $this->SendDebug(
             'WriteRegister',
-            'Addr=' . (int)$register['Address'] .
+            'Addr=' . $address .
             ' Type=' . $type .
-            ' Length=' . (int)$register['Length'] .
+            ' Length=' . (int) $register['Length'] .
             ' Words=' . count($words) .
-            ' Value=' . (string)$value,
+            ' Value=' . (string) $value,
             0
         );
 
-        $this->WriteHoldingRegisters($this->ToModbusAddress((int) $register['Address']), $words);
+        $modbusAddress = $this->ToModbusAddress($address);
+
+        // SMARTFOX verhält sich je nach Register unterschiedlich:
+        // 40400 (ControlViaModbus) -> FC16
+        // 41608 / 41609 (CarCharge1...) -> FC6
+        if ($address === 40400) {
+            $this->WriteHoldingRegistersFC16($modbusAddress, $words);
+            return;
+        }
+
+        if ($address === 41608 || $address === 41609) {
+            $this->WriteHoldingRegistersFC6($modbusAddress, $words);
+            return;
+        }
+
+        // Standard:
+        if (count($words) === 1) {
+            $this->WriteHoldingRegistersFC6($modbusAddress, $words);
+        } else {
+            $this->WriteHoldingRegistersFC16($modbusAddress, $words);
+        }
     }
 
     private function ReadHoldingRegisters(int $address, int $quantity): array
