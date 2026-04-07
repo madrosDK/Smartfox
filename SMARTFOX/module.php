@@ -169,10 +169,10 @@ class SMARTFOX extends IPSModule
                     $this->RegisterVariableBoolean($ident, $name, 'SMARTFOX.Switch');
                     break;
                 case VARIABLETYPE_INTEGER:
-                    $this->RegisterVariableInteger($ident, $name, $this->GetProfileForUnit($unit, false));
+                    $this->RegisterVariableInteger($ident, $name, $this->GetProfileForRegister($register, false));
                     break;
                 case VARIABLETYPE_FLOAT:
-                    $this->RegisterVariableFloat($ident, $name, $this->GetProfileForUnit($unit, true));
+                    $this->RegisterVariableFloat($ident, $name, $this->GetProfileForRegister($register, true));
                     break;
                 default:
                     $this->RegisterVariableString($ident, $name, '');
@@ -679,15 +679,19 @@ class SMARTFOX extends IPSModule
         }
     }
 
-    private function GetProfileForUnit(string $unit, bool $isFloat): string
+    private function GetProfileForRegister(array $register, bool $isFloat): string
     {
-        $unit = strtolower($unit);
+        $unit = strtolower(trim((string) ($register['Unit'] ?? '')));
+        $scale = (float) ($register['Scale'] ?? 1.0);
 
         if ($unit === 'w') {
             return $isFloat ? 'SMARTFOX.W' : '';
         }
 
         if ($unit === 'wh') {
+            if ($isFloat && abs($scale - 0.001) < 0.000001) {
+                return 'SMARTFOX.kWh';
+            }
             return $isFloat ? 'SMARTFOX.Wh' : '';
         }
 
