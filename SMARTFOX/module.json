@@ -1,0 +1,15 @@
+{
+  "id": "{7A6C8F1C-1E5C-4A39-9B40-8A6C510AF165}",
+  "name": "SMARTFOX",
+  "type": 3,
+  "vendor": "OpenAI",
+  "aliases": [
+    "SMARTFOX Pro",
+    "SMARTFOX Pro 2",
+    "SMARTFOX Pro 3"
+  ],
+  "parentRequirements": [],
+  "childRequirements": [],
+  "implemented": [],
+  "prefix": "SMARTFOX"
+}
