@@ -566,6 +566,7 @@ class SMARTFOX extends IPSModule
 
         // Mehrere Register -> Function Code 16
         $functionCode = 16;
+        $this->SendDebug('WriteHoldingRegisters', 'Using FC16 for address ' . $address, 0);
         $byteCount = $quantity * 2;
         $payload = '';
 
