@@ -16,9 +16,9 @@
       "caption": "Unit ID"
     },
     {
-      "type": "Interval",
+      "type": "NumberSpinner",
       "name": "UpdateInterval",
-      "caption": "Aktualisierung"
+      "caption": "Aktualisierung (Sekunden)"
     },
     {
       "type": "List",
