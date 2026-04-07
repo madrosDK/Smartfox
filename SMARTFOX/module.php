@@ -406,18 +406,45 @@ class SMARTFOX extends IPSModule
             throw new Exception('Modbus Paket konnte nicht vollständig gesendet werden');
         }
 
-        $response = fread($socket, 260);
+        $header = '';
+        while (strlen($header) < 6) {
+            $chunk = fread($socket, 6 - strlen($header));
+            if ($chunk === false || $chunk === '') {
+                $meta = stream_get_meta_data($socket);
+                fclose($socket);
+                if ($meta['timed_out']) {
+                    throw new Exception('Zeitüberschreitung beim Lesen des MBAP-Headers');
+                }
+                throw new Exception('Unvollständiger MBAP-Header empfangen');
+            }
+            $header .= $chunk;
+        }
+
+        $mbap = unpack('ntransaction/nprotocol/nlength', $header);
+        $remaining = (int) $mbap['length']; // Unit-ID + PDU
+        $body = '';
+
+        while (strlen($body) < $remaining) {
+            $chunk = fread($socket, $remaining - strlen($body));
+            if ($chunk === false || $chunk === '') {
+                $meta = stream_get_meta_data($socket);
+                fclose($socket);
+                if ($meta['timed_out']) {
+                    throw new Exception('Zeitüberschreitung beim Lesen der Modbus-Nutzdaten');
+                }
+                throw new Exception('Unvollständige Modbus-Antwort empfangen');
+            }
+            $body .= $chunk;
+        }
+
         $meta = stream_get_meta_data($socket);
         fclose($socket);
 
         if ($meta['timed_out']) {
             throw new Exception('Zeitüberschreitung beim Lesen der Antwort');
         }
-        if ($response === false || $response === '') {
-            throw new Exception('Leere Antwort vom Gerät');
-        }
 
-        return $response;
+        return $header . $body;
     }
 
     private function NormalizeIdent(string $ident): string
