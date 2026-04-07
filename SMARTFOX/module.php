@@ -112,7 +112,7 @@ class SMARTFOX extends IPSModule
                 'Address'      => 41608,
                 'Name'         => 'Car charge 1 charge mode',
                 'Ident'        => 'CarCharge1ChargeMode',
-                'Type'         => 'uint8',
+                'Type'         => 'uint16',
                 'Length'       => 1,
                 'Access'       => 'RW',
                 'Scale'        => 1,
@@ -421,7 +421,7 @@ class SMARTFOX extends IPSModule
 
     private function WriteRegister(array $register, $value): void
     {
-        $type = (string) $register['Type'];
+        $type = strtolower((string) $register['Type']);
         $scale = (float) $register['Scale'];
         if ($scale == 0.0) {
             $scale = 1.0;
@@ -432,6 +432,7 @@ class SMARTFOX extends IPSModule
         }
 
         $words = [];
+
         switch ($type) {
             case 'bool':
             case 'uint8':
@@ -463,6 +464,16 @@ class SMARTFOX extends IPSModule
             default:
                 throw new Exception('Schreiben für Typ nicht unterstützt: ' . $type);
         }
+
+        $this->SendDebug(
+            'WriteRegister',
+            'Addr=' . (int)$register['Address'] .
+            ' Type=' . $type .
+            ' Length=' . (int)$register['Length'] .
+            ' Words=' . count($words) .
+            ' Value=' . (string)$value,
+            0
+        );
 
         $this->WriteHoldingRegisters($this->ToModbusAddress((int) $register['Address']), $words);
     }
