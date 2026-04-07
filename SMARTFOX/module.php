@@ -591,6 +591,14 @@ class SMARTFOX extends IPSModule
         if ($function !== $functionCode) {
             throw new Exception('Unerwarteter Funktionscode beim Schreiben: ' . $function);
         }
+        if ($function >= 128) {
+          $exceptionCode = ord($response[8]);
+          throw new Exception(
+              'Modbus Exception. Function=' . $function .
+              ' ExceptionCode=' . $exceptionCode .
+              ' Address=' . $address
+          );
+      }
     }
 
     private function WriteHoldingRegistersFC16(int $address, array $words): void
